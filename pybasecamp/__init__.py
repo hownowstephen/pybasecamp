@@ -24,8 +24,12 @@ class Basecamp():
         url = "%s/%s" % (self.config.domain,endpoint.lstrip('/'))
         if not url.startswith("http://"): url = "https://%s" % url
 
-        # Generate a request
-        request = urllib2.Request(url, data=urllib.urlencode(kwargs))
+        if not 'postdata' in kwargs:
+            data = urllib.urlencode(kwargs)
+        else:
+            data = kwargs['postdata']
+
+        request = urllib2.Request(url,data=data)
         request.add_header('Content-Type', 'application/xml')
         request.get_method = lambda: method
 
@@ -81,9 +85,12 @@ class Basecamp():
         '''Flags a to-do list item as incomplete'''
         return self._load("PUT","/todo_items/%s/uncomplete.xml" % item_id,**kwargs)
         
-    def create_item(self,**kwargs): pass
-        #  /todo_lists/#{todo_list_id}/todo_items/new.xml
-        # POST /todo_lists/#{todo_list_id}/todo_items.xml
+    def create_item(self,list_id,**kwargs): 
+        if not list_id: list_id = self.config.default_list
+        data = self._load("GET", "/todo_lists/%s/todo_items/new.xml" % list_id)
+        for key,value in kwargs.iteritems():
+            data.find(key).text = value
+        create = self._load("POST","/todo_lists/%s/todo_items.xml" % list_id, postdata=etree.tostring(data))
     def update_item(self,**kwargs): pass
         #  /todo_items/#{id}/edit.xml
         #  PUT /todo_items/#{id}.xml
@@ -108,7 +115,7 @@ class BasecampConfig():
 
     def add(self,config_name):
         '''Add a new configuration to the config file'''
-        self.config[config_name] = {'domain': '', 'username': '', 'password': ''}
+        self.config[config_name] = {'domain': '', 'username': '', 'password': '', 'default_list': ''}
     
     def remove(self,config_name):
         del self.config[config_name]
@@ -145,7 +152,10 @@ class BasecampConfig():
             return self.profile[key]
         except:
             return self.config[key]
-
+    
+    def __contains__(self,key):
+        if key in self.config: return True
+        return False
     
     @classmethod
     def Configure(self,config=default_config):
@@ -173,6 +183,13 @@ class BasecampConfig():
                 except:
                     raise PyBasecampException("Configuration file is not writeable %s" % config.config_path)
                 sys.exit(0)
+            elif cfg.startswith('-'):
+                cfg = cfg.strip('-')
+                print cfg
+                if not cfg in config:
+                    raise PyBasecampException("Configuration %s does not exist!" % cfg)
+                else:
+                    config.remove(cfg)
             # Handle the selection of a configuration line
             elif cfg in config or cfg.startswith('+'):
                 if cfg.startswith('+'):
@@ -188,12 +205,6 @@ class BasecampConfig():
                     if data: line[key] = data
                 print "saving updated configuration"
                 config.save()
-            elif cfg.startswith('-'):
-                cfg = cfg.strip('-')
-                if not cfg in config:
-                    raise PyBasecampException("Configuration %s does not exist!" % cfg)
-                else:
-                    config.remove(cfg)
             # Catch a does not exist error
             elif cfg and not cfg in config:
                 print "Configuration does not exist"
@@ -204,6 +215,6 @@ class PyBasecampException(Exception):
 
 
 if __name__ == '__main__':
-    #BasecampConfig.Configure()
+    BasecampConfig.Configure()
     b = Basecamp()
     b.todo_lists(responsible_party=7779036)
